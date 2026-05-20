@@ -14,11 +14,12 @@
 
 
         if (hubs.length === 0)
-            return error('pair.select_hub.no_hubs');
-
-        // render list
-        var hubsRender = $('#hubs-list-template').render(hubs);
-        $('#hubs-list').html(hubsRender);
+            $('#hubs-list').html('<li class="device">No hubs discovered yet.</li>');
+        else {
+            // render list
+            var hubsRender = $('#hubs-list-template').render(hubs);
+            $('#hubs-list').html(hubsRender);
+        }
 
         // auto-select first item
         if ($('#hubs-list .radio input').length > 0 && $('#hubs-list .radio input:checked').length < 1) {
@@ -26,10 +27,41 @@
         }
     })
 
-    function error(str) {
+    function showError(str) {
         $('#error').html(__(str));
+    }
+
+    function error(str) {
+        showError(str);
         Homey.setNavigationClose();
     }
+
+    function showStatus(text) {
+        $('#manual-status').html(text);
+    }
+
+    $('#manual-hub-button').on('click', function () {
+        $('#manual-status').html('Probing hub...');
+        $('#error').html('');
+        var ip = $('#manual-hub-ip').val().trim();
+
+        if (!ip) {
+            return showError('Please enter a valid IP address.');
+        }
+
+        Homey.emit('manual_hub', { ip: ip }, function (err, hub) {
+            if (err) {
+                return showError(err);
+            }
+
+            showStatus('Manual hub added: ' + hub.name);
+
+            if ($('#hubs-list .radio input[value="' + hub.id + '"]').length === 0) {
+                var hubsRender = $('#hubs-list-template').render([hub]);
+                $('#hubs-list').append(hubsRender);
+            }
+        });
+    });
 
     $(document).on('change', '#hubs-list input:radio', function () {
         Homey.emit('hub_changed', {
@@ -52,6 +84,9 @@
     </li>
 </script>
 
-<i id="hubs-list-loading" class="loading fa fa-cog fa-spin"></i>
-<ul id="hubs-list" class="deviceclasses-list"></ul>
+<i id="hubs-list-loading" class="loading fa fa-cog fa-spin"></i><div id="manual-hub-entry" style="margin:12px 0;">
+    <input id="manual-hub-ip" type="text" placeholder="Enter Harmony Hub IP address" style="width: 60%; padding: 8px;" />
+    <button id="manual-hub-button" style="padding: 8px 12px; margin-left: 8px;">Add by IP</button>
+    <div id="manual-status" style="margin-top: 8px; color: #2f8f2f;"></div>
+</div><ul id="hubs-list" class="deviceclasses-list"></ul>
 <p id="error"></p>

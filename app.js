@@ -81,6 +81,7 @@ class App extends Homey.App {
         this._activities = [];
         this._hubManager = new HubManager(this.homey);
         this._discover = new Discovery(this._hubManager, this.homey);
+        this._discover.start();
 
         this.wireEvents();
         this.registerActions();
@@ -172,6 +173,30 @@ class App extends Homey.App {
     findHubs() {
         console.log('Finding hubs....')
         this._discover.start();
+    }
+
+    discoverHubByIp(ip) {
+        return new Promise((resolve, reject) => {
+            const onHubConnected = (hub) => {
+                if (hub.ip === ip) {
+                    this._discover.removeListener('hubconnected', onHubConnected);
+                    this.homey.clearTimeout(timeout);
+                    resolve(hub);
+                }
+            };
+
+            const timeout = this.homey.setTimeout(() => {
+                this._discover.removeListener('hubconnected', onHubConnected);
+                reject(new Error(`No Harmony Hub responded at ${ip}`));
+            }, 5000);
+
+            this._discover.on('hubconnected', onHubConnected);
+            this._discover.discoverHubByIp(ip).catch((err) => {
+                this._discover.removeListener('hubconnected', onHubConnected);
+                this.homey.clearTimeout(timeout);
+                reject(err);
+            });
+        });
     }
 
     addHub(hub) {
