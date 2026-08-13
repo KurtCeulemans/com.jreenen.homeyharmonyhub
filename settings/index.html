@@ -11,6 +11,18 @@
     </h1>
 
     <fieldset>
+        <legend data-i18n="settings.hubsection"></legend>
+        <p data-i18n="settings.hubintro"></p>
+        <div class="field row">
+            <div class="col-xs-12 col-md-8">
+                <input id="harmony-hub-ip" type="text" placeholder="192.168.x.x" style="width: 60%; padding: 8px;" />
+                <button id="save-hub-ip" data-i18n="settings.savehubip"></button>
+                <div id="hub-ip-status" style="margin-top: 8px; color: #2f8f2f;"></div>
+            </div>
+        </div>
+    </fieldset>
+
+    <fieldset>
         <legend data-i18n="settings.debugsection"></legend>
         <p data-i18n="settings.debugintro"></p>
         <div class="field row">
@@ -24,7 +36,29 @@
     <script type="text/javascript">
 
         function onHomeyReady(Homey) {
+            var ipInput = document.getElementById('harmony-hub-ip');
+            var saveButton = document.getElementById('save-hub-ip');
+            var statusElement = document.getElementById('hub-ip-status');
             var downloadDebugFileElement = document.getElementById('senddebugfile');
+
+            Homey.get('harmonyHubIp', function (err, value) {
+                if (value)
+                    ipInput.value = value;
+            });
+
+            saveButton.addEventListener('click', function () {
+                var ip = ipInput.value.trim();
+                statusElement.textContent = '';
+                Homey.set('harmonyHubIp', ip, function (err) {
+                    if (err) {
+                        statusElement.style.color = '#c0392b';
+                        statusElement.textContent = String(err);
+                        return;
+                    }
+                    statusElement.style.color = '#2f8f2f';
+                    statusElement.textContent = Homey.__('settings.hubipsaved');
+                });
+            });
 
             downloadDebugFileElement.addEventListener('click', () => {
                 downloadDebugFileElement.parentNode.removeChild(downloadDebugFileElement);

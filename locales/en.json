@@ -3,6 +3,10 @@
 	"offline" : "went offline",
 	"settings": {
         "title": "Harmony Hub settings",
+		"hubsection": "Harmony Hub",
+		"hubintro": "Enter your Harmony Hub IP address when discovery does not work (e.g. hub on another VLAN/subnet).",
+		"savehubip": "Save IP address",
+		"hubipsaved": "IP address saved.",
 		"debugsection": "Debug",
 		"debugintro": "Use this if the application developer ask you to send a diagnostic report.",
 	    "senddebugreport": "Send diagnostic report"	

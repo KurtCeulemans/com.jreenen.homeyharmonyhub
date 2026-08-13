@@ -3,6 +3,10 @@
 	"offline" : "is offline",
 	"settings": {
         "title": "Homey Harmony Hub instellingen",
+		"hubsection": "Harmony Hub",
+		"hubintro": "Vul het IP-adres van je Harmony Hub in als discovery niet werkt (bijv. hub op een ander VLAN/subnet).",
+		"savehubip": "IP-adres opslaan",
+		"hubipsaved": "IP-adres opgeslagen.",
 		"debugsection": "Debug",
 		"debugintro": "Gebruik dit als de applicatie ontwikkelaar je vraagt om een diagnostisch rapport op te sturen.",
 		"senddebugreport": "Verstuur diagnostisch rapport"

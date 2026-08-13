@@ -4,40 +4,50 @@
     }
 </style>
 
+<script type="text/html" id="hubs-list-template">
+    <li class="device">
+        <label for='device-{{:id}}' class="name">
+			<span class="icon" style="-webkit-mask-image: url({{:icon}})"></span>
+            <span class="name">{{:name}}</span>
+		</label>
+        <label for='device-{{:id}}' class="radio">
+			<input id='device-{{:id}}' type="radio" name="device" value="{{:id}}" tabindex="{{:#index+1}}" />
+		</label>
+    </li>
+</script>
+
+<div id="manual-hub-entry" style="margin:12px 0;">
+    <input id="manual-hub-ip" type="text" placeholder="Enter Harmony Hub IP address" style="width: 60%; padding: 8px;" />
+    <button id="manual-hub-button" style="padding: 8px 12px; margin-left: 8px;">Add by IP</button>
+    <div id="manual-status" style="margin-top: 8px; color: #2f8f2f;"></div>
+</div>
+<i id="hubs-list-loading" class="loading fa fa-cog fa-spin"></i>
+<ul id="hubs-list" class="deviceclasses-list"></ul>
+<p id="error"></p>
+
 <script type="text/javascript">
     Homey.setTitle(__('pair.select_hub.title'));
 
-    Homey.emit('select_hub', null, function (err, hubs) {
-        $('#hubs-list-loading').fadeOut(200);
-
-        if (err) return error(err);
-
-
-        if (hubs.length === 0)
-            $('#hubs-list').html('<li class="device">No hubs discovered yet.</li>');
-        else {
-            // render list
-            var hubsRender = $('#hubs-list-template').render(hubs);
-            $('#hubs-list').html(hubsRender);
-        }
-
-        // auto-select first item
-        if ($('#hubs-list .radio input').length > 0 && $('#hubs-list .radio input:checked').length < 1) {
-            $('#hubs-list .radio input').first().prop('checked', true).trigger('change');
-        }
-    })
-
     function showError(str) {
-        $('#error').html(__(str));
-    }
-
-    function error(str) {
-        showError(str);
-        Homey.setNavigationClose();
+        var message = str && str.message ? str.message : String(str);
+        $('#error').html(message);
     }
 
     function showStatus(text) {
         $('#manual-status').html(text);
+    }
+
+    function renderHubs(hubs) {
+        if (hubs.length === 0)
+            $('#hubs-list').html('<li class="device">No hubs discovered yet.</li>');
+        else {
+            var hubsRender = $('#hubs-list-template').render(hubs);
+            $('#hubs-list').html(hubsRender);
+        }
+
+        if ($('#hubs-list .radio input').length > 0 && $('#hubs-list .radio input:checked').length < 1) {
+            $('#hubs-list .radio input').first().prop('checked', true).trigger('change');
+        }
     }
 
     $('#manual-hub-button').on('click', function () {
@@ -60,6 +70,8 @@
                 var hubsRender = $('#hubs-list-template').render([hub]);
                 $('#hubs-list').append(hubsRender);
             }
+
+            $('#hubs-list .radio input[value="' + hub.id + '"]').prop('checked', true).trigger('change');
         });
     });
 
@@ -67,26 +79,17 @@
         Homey.emit('hub_changed', {
             logitech_hubId: this.value
         });
-
     });
 
-</script>
+    Homey.emit('select_hub', null, function (err, hubs) {
+        $('#hubs-list-loading').fadeOut(200);
 
-<script type="text/html" id="hubs-list-template">
-    <li class="device">
-        <label for='device-{{:id}}' class="name">
-			<span class="icon" style="-webkit-mask-image: url({{:icon}})"></span>
-            <span class="name">{{:name}}</span>
-		</label>
-        <label for='device-{{:id}}' class="radio">
-			<input id='device-{{:id}}' type="radio" name="device" value="{{:id}}" tabindex="{{:#index+1}}" />
-		</label>
-    </li>
-</script>
+        if (err) {
+            showError(err);
+            $('#hubs-list').html('<li class="device">No hubs discovered yet.</li>');
+            return;
+        }
 
-<i id="hubs-list-loading" class="loading fa fa-cog fa-spin"></i><div id="manual-hub-entry" style="margin:12px 0;">
-    <input id="manual-hub-ip" type="text" placeholder="Enter Harmony Hub IP address" style="width: 60%; padding: 8px;" />
-    <button id="manual-hub-button" style="padding: 8px 12px; margin-left: 8px;">Add by IP</button>
-    <div id="manual-status" style="margin-top: 8px; color: #2f8f2f;"></div>
-</div><ul id="hubs-list" class="deviceclasses-list"></ul>
-<p id="error"></p>
+        renderHubs(hubs);
+    });
+</script>

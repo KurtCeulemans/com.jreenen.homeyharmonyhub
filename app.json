@@ -497,12 +497,6 @@
       },
       "pair": [
         {
-          "id": "select_hub",
-          "navigation": {
-            "next": "list_devices"
-          }
-        },
-        {
           "id": "list_devices",
           "template": "list_devices",
           "navigation": {
@@ -548,12 +542,6 @@
         "small": "/drivers/harmony_device_driver/assets/images/homey_harmony_hub_small.jpg"
       },
       "pair": [
-        {
-          "id": "select_hub",
-          "navigation": {
-            "next": "list_devices"
-          }
-        },
         {
           "id": "list_devices",
           "template": "list_devices",

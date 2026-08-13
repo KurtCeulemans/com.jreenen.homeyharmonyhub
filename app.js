@@ -70,7 +70,7 @@ const iconsMap = {
 class App extends Homey.App {
 
     async onInit() {
-        console.log(`${Homey.manifest.id} running...`);
+        console.log(`${Homey.manifest.id} running (pairing via app settings IP)...`);
 
         Homey.app = this.homey.app;
 
@@ -176,27 +176,37 @@ class App extends Homey.App {
     }
 
     discoverHubByIp(ip) {
-        return new Promise((resolve, reject) => {
-            const onHubConnected = (hub) => {
-                if (hub.ip === ip) {
-                    this._discover.removeListener('hubconnected', onHubConnected);
-                    this.homey.clearTimeout(timeout);
-                    resolve(hub);
-                }
-            };
+        const trimmedIp = typeof ip === 'string' ? ip.trim() : ip;
+        console.log(`App: discoverHubByIp ${trimmedIp}`);
+        return this._discover.discoverHubByIp(trimmedIp);
+    }
 
-            const timeout = this.homey.setTimeout(() => {
-                this._discover.removeListener('hubconnected', onHubConnected);
-                reject(new Error(`No Harmony Hub responded at ${ip}`));
-            }, 5000);
+    async resolvePairingHub() {
+        const configuredIp = await this.homey.settings.get('harmonyHubIp');
+        const ip = typeof configuredIp === 'string' ? configuredIp.trim() : '';
 
-            this._discover.on('hubconnected', onHubConnected);
-            this._discover.discoverHubByIp(ip).catch((err) => {
-                this._discover.removeListener('hubconnected', onHubConnected);
-                this.homey.clearTimeout(timeout);
-                reject(err);
-            });
-        });
+        if (ip) {
+            console.log(`App: probing configured hub IP ${ip}`);
+            try {
+                return await this.discoverHubByIp(ip);
+            } catch (err) {
+                throw new Error(`Could not reach Harmony Hub at ${ip}: ${err.message}`);
+            }
+        }
+
+        this.findHubs();
+        const hubs = this.getHubs();
+        if (hubs.length === 0) {
+            throw new Error(
+                'No Harmony Hub IP configured. Open App settings, enter the hub IP under Harmony Hub, save, and try pairing again.'
+            );
+        }
+
+        const hub = hubs[0];
+        if (hub.remoteId)
+            return hub;
+
+        return this.discoverHubByIp(hub.ip);
     }
 
     addHub(hub) {
