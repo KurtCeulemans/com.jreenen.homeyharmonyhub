@@ -4,11 +4,8 @@ const Homey = require('homey');
 const HubManager = require('./lib/hubmanager.js');
 const Discovery = require('./lib/discovery.js');
 const CapabilityHelper = require('./lib/capabilityhelper.js');
-const https = require('https');
-const { URL } = require('url');
+const { getCanonicalHubId, normalizeHubInfo, deviceEventKey } = require('./lib/hubidentity.js');
 
-const events = require('events');
-const eventEmitter = new events.EventEmitter();
 const capabilityhelper = new CapabilityHelper();
 
 const iconsMap = {
@@ -70,42 +67,62 @@ const iconsMap = {
 class App extends Homey.App {
 
     async onInit() {
-        console.log(`${Homey.manifest.id} running (pairing via app settings IP)...`);
+        this.log(`${Homey.manifest.id} running (pairing via app settings IP)...`);
 
         Homey.app = this.homey.app;
 
         if (process.env.DEBUG === '1')
-            inspector.open(8080, '0.0.0.0', true)
+            inspector.open(8080, '127.0.0.1', true)
 
         this._hubs = [];
-        this._activities = [];
         this._hubManager = new HubManager(this.homey);
         this._discover = new Discovery(this._hubManager, this.homey);
         this._discover.start();
 
         this.wireEvents();
         this.registerActions();
+        this._registerSettingsListener();
+        await this._connectConfiguredHub();
+    }
+
+    _readConfiguredIp(value) {
+        return typeof value === 'string' ? value.trim() : '';
+    }
+
+    _registerSettingsListener() {
+        this.homey.settings.on('set', async (key) => {
+            if (key !== 'harmonyHubIp')
+                return;
+
+            await this._connectConfiguredHub();
+        });
+    }
+
+    async _connectConfiguredHub() {
+        const ip = this._readConfiguredIp(await this.homey.settings.get('harmonyHubIp'));
+        if (!ip)
+            return;
+
+        this.log(`Probing configured hub IP ${ip}`);
+        try {
+            await this.discoverHubByIp(ip);
+        } catch (err) {
+            this.error(`Configured hub IP ${ip} is not reachable: ${err.message}`);
+        }
     }
 
     wireEvents() {
         this._discover.on('hubconnected', hub => {
-            const found = this._hubs.some((existingHub) => {
-                return existingHub.uuid === hub.uuid;
-            });
+            const normalized = normalizeHubInfo(hub);
+            if (!getCanonicalHubId(normalized) || !normalized.ip || !normalized.friendlyName)
+                return;
 
-            if (found === false && hub.ip !== undefined && hub.friendlyName !== undefined) {
-                hub.Hub = this._hubManager.connectToHub(hub.ip);
-                this.addHub(hub);
-            }
-
-            if (hub.friendlyName !== undefined)
-                this.emit('hubonline', hub, true);
-
+            this.addHub(normalized);
+            this.emit('hubonline', normalized, true);
         });
 
         this._hubManager.on('activityChanged', (activityName, hubId) => {
-            console.log(activityName);
-            console.log(hubId);
+            this.log(activityName);
             const foundHub = this.getHub(hubId);
 
             if (foundHub === undefined)
@@ -120,8 +137,8 @@ class App extends Homey.App {
             activityStartedTrigger.trigger(tokens)
         });
 
-        this._hubManager.on('inactivitytime', (seconds, hubId, hubInstance) => {
-            const state = { inactivefor: seconds }
+        this._hubManager.on('inactivitytime', (minutes, hubId) => {
+            const state = { inactivefor: minutes }
             const foundHub = this.getHub(hubId);
 
             if (foundHub === undefined)
@@ -136,8 +153,7 @@ class App extends Homey.App {
         })
 
         this._hubManager.on('activityChanging', (activityName, hubId) => {
-            console.log(activityName);
-            console.log(hubId);
+            this.log(activityName);
             const foundHub = this.getHub(hubId);
 
             if (foundHub === undefined)
@@ -171,22 +187,21 @@ class App extends Homey.App {
     }
 
     findHubs() {
-        console.log('Finding hubs....')
+        this.log('Finding hubs....')
         this._discover.start();
     }
 
     discoverHubByIp(ip) {
         const trimmedIp = typeof ip === 'string' ? ip.trim() : ip;
-        console.log(`App: discoverHubByIp ${trimmedIp}`);
+        this.log(`App: discoverHubByIp ${trimmedIp}`);
         return this._discover.discoverHubByIp(trimmedIp);
     }
 
     async resolvePairingHub() {
-        const configuredIp = await this.homey.settings.get('harmonyHubIp');
-        const ip = typeof configuredIp === 'string' ? configuredIp.trim() : '';
+        const ip = this._readConfiguredIp(await this.homey.settings.get('harmonyHubIp'));
 
         if (ip) {
-            console.log(`App: probing configured hub IP ${ip}`);
+            this.log(`App: probing configured hub IP ${ip}`);
             try {
                 return await this.discoverHubByIp(ip);
             } catch (err) {
@@ -196,11 +211,11 @@ class App extends Homey.App {
 
         this.findHubs();
         const hubs = this.getHubs();
-        if (hubs.length === 0) {
+        if (hubs.length === 0)
             throw new Error(
                 'No Harmony Hub IP configured. Open App settings, enter the hub IP under Harmony Hub, save, and try pairing again.'
             );
-        }
+
 
         const hub = hubs[0];
         if (hub.remoteId)
@@ -210,22 +225,35 @@ class App extends Homey.App {
     }
 
     addHub(hub) {
-        const hasFriendlyName = hub.friendlyName !== undefined;
+        const normalized = normalizeHubInfo(hub);
+        const id = getCanonicalHubId(normalized);
+        if (!normalized.friendlyName || !normalized.ip || !id)
+            return undefined;
 
-        if (hasFriendlyName) {
-            hub.icon = `/app/${Homey.manifest.id}/assets/icon.svg`;
-            this._hubs.push(hub);
-            console.log(`discovered ${hub.ip} ${hub.friendlyName} ${hub.uuid}`);
-
-            eventEmitter.emit('hubAdded', hub);
+        const existing = this.getHub(id) || this._hubs.find(item => item.ip === normalized.ip);
+        if (existing) {
+            existing.ip = normalized.ip;
+            existing.friendlyName = normalized.friendlyName || existing.friendlyName;
+            existing.remoteId = normalized.remoteId || existing.remoteId;
+            existing.hubId = normalized.hubId || existing.hubId;
+            existing.uuid = normalized.uuid || existing.uuid;
+            return existing;
         }
+
+        normalized.icon = `/app/${Homey.manifest.id}/assets/icon.svg`;
+        this._hubs.push(normalized);
+        this.log(`discovered ${normalized.ip} ${normalized.friendlyName} ${id}`);
+        return normalized;
     }
 
     getHub(hubId) {
-        const foundHub = this._hubs.find(x => x.uuid === hubId);
+        const id = hubId != null ? String(hubId) : '';
+        const foundHub = this._hubs.find(x =>
+            String(x.remoteId) === id || String(x.hubId) === id || String(x.uuid) === id
+        );
 
         if (foundHub === undefined)
-            console.log(`No hub found with id ${hubId}`)
+            this.log(`No hub found with id ${hubId}`)
 
         return foundHub;
     }
@@ -234,84 +262,98 @@ class App extends Homey.App {
         return this._hubs;
     }
 
-    getHubActivities(ip, hubId) {
-        const activities = [];
+    _waitUntilHubReady(hub, timeoutMs) {
+        const timeout = timeoutMs || 8000;
+        if (hub.hubConnection && hub.hubConnection.readyState === 1 && hub.activities.length)
+            return Promise.resolve(hub);
 
         return new Promise((resolve, reject) => {
-            this._hubManager.connectToHub(ip).then((hub) => {
-                hub.activities.forEach((activity) => {
-                    if (activity.controlGroup !== undefined)
-                        capabilityhelper.getCapabilities(activity.controlGroup).then((capabilities) => {
-                            capabilities.push('onoff');
-                            if (activity.type === 'VirtualTelevisionN') {
-                                const foundDevice = {
-                                    name: activity.label,
-                                    class: 'tv',
-                                    capabilities,
-                                    data: {
-                                        id: activity.id,
-                                        hubId,
-                                        controlGroup: activity.controlGroup,
-                                        label: activity.label
-                                    }
-                                };
-
-                                activities.push(foundDevice);
-                            } else {
-                                const foundDevice = {
-                                    name: activity.label,
-                                    capabilities,
-                                    data: {
-                                        id: activity.id,
-                                        hubId,
-                                        controlGroup: activity.controlGroup,
-                                        label: activity.label
-                                    }
-                                };
-
-                                activities.push(foundDevice);
-                            }
-                        });
-
-                });
-                resolve(activities);
-            });
+            const started = Date.now();
+            const timer = this.homey.setInterval(() => {
+                const connected = hub.hubConnection && hub.hubConnection.readyState === 1;
+                if (connected && (hub.devices.length || hub.activities.length)) {
+                    this.homey.clearInterval(timer);
+                    return resolve(hub);
+                }
+                if (Date.now() - started > timeout) {
+                    this.homey.clearInterval(timer);
+                    if (connected)
+                        return resolve(hub);
+                    reject(new Error('Hub did not connect in time'));
+                }
+            }, 200);
         });
     }
 
-    getHubDevices(ip, hubId) {
+    async getHubActivities(ip, hubId) {
+        const hub = await this._hubManager.connectToHub(ip);
+        if (!hub)
+            throw new Error('Hub is not connected');
+
+        await this._waitUntilHubReady(hub);
+
+        const canonicalHubId = getCanonicalHubId(hub) || hubId;
+        const activities = [];
+
+        for (const activity of hub.activities) {
+            if (activity.controlGroup === undefined)
+                continue;
+
+            const capabilities = await capabilityhelper.getCapabilities(activity.controlGroup);
+            capabilities.push('onoff');
+
+            const foundDevice = {
+                name: activity.label,
+                capabilities,
+                data: {
+                    id: deviceEventKey(canonicalHubId, activity.id),
+                    hubId: String(canonicalHubId),
+                    harmonyId: String(activity.id),
+                    controlGroup: activity.controlGroup,
+                    label: activity.label
+                }
+            };
+
+            if (activity.type === 'VirtualTelevisionN')
+                foundDevice.class = 'tv';
+
+            activities.push(foundDevice);
+        }
+
+        return activities;
+    }
+
+    async getHubDevices(ip, hubId) {
+        const hub = await this._hubManager.connectToHub(ip);
+        if (!hub)
+            throw new Error('Hub is not connected');
+
+        await this._waitUntilHubReady(hub);
+
+        const canonicalHubId = getCanonicalHubId(hub) || hubId;
         const devices = [];
 
-        return new Promise((resolve, reject) => {
-            this._hubManager.connectToHub(ip).then((hub) => {
-                hub.devices.forEach((device) => {
-                    capabilityhelper.getCapabilities(device.controlGroup).then((capabilities) => {
-                        console.log(device.type);
-                        const iconName = iconsMap[device.type];
-                        let iconPath = '';
-                        if (iconName !== undefined)
-                            iconPath = `/device_icons/${iconName}`;
+        for (const device of hub.devices) {
+            const capabilities = await capabilityhelper.getCapabilities(device.controlGroup);
+            this.log(device.type);
+            const iconName = iconsMap[device.type];
+            const iconPath = iconName !== undefined ? `/device_icons/${iconName}` : '/icon.svg';
 
-                        else
-                            iconPath = '/icon.svg';
-
-                        const foundDevice = {
-                            name: device.label,
-                            icon: iconPath,
-                            capabilities,
-                            data: {
-                                id: device.id,
-                                hubId,
-                                controlGroup: device.controlGroup,
-                                label: device.label
-                            }
-                        };
-                        devices.push(foundDevice);
-                    })
-                });
-                resolve(devices);
+            devices.push({
+                name: device.label,
+                icon: iconPath,
+                capabilities,
+                data: {
+                    id: deviceEventKey(canonicalHubId, device.id),
+                    hubId: String(canonicalHubId),
+                    harmonyId: String(device.id),
+                    controlGroup: device.controlGroup,
+                    label: device.label
+                }
             });
-        });
+        }
+
+        return devices;
     }
 
     registerActions() {
@@ -333,10 +375,10 @@ class App extends Homey.App {
         const isActivityCondition = this.homey.flow
             .getConditionCard('is_activity')
             .registerRunListener((args, state) => {
-                console.log(args.activity_input);
-                console.log(args.activity.name)
+                this.log(args.activity_input);
+                this.log(args.activity.name)
                 const isActivity = args.activity_input.trim() === args.activity.name.trim();
-                console.log(isActivity);
+                this.log(isActivity);
                 return Promise.resolve(isActivity);
             });
         this.hubAutoComplete(isActivityCondition);
@@ -344,11 +386,7 @@ class App extends Homey.App {
 
         this.homey.flow.getTriggerCard('hub_inactive')
             .registerRunListener((args, state) => {
-                // TODO: verify the result of not using this functionality
-                // if (state.inactivefor >= args.inactivefor)
-                //    hubInstance.lastActivity = Date.now();
-
-                return Promise.resolve(state.inactivefor >= args.inactivefor);
+                return Promise.resolve(Number(state.inactivefor) === Number(args.inactivefor));
             })
 
     }
@@ -356,7 +394,7 @@ class App extends Homey.App {
     registerStopActivityCommandRunListener(stopActivityAction) {
         stopActivityAction
             .registerRunListener((args, state) => {
-                console.log('Stop activity!!');
+                this.log('Stop activity!!');
                 const hubArgValue = args.hub;
                 const hubId = hubArgValue.hubId;
                 const foundHub = this.getHub(hubId);
@@ -366,14 +404,17 @@ class App extends Homey.App {
                         return reject();
 
                     this._hubManager.connectToHub(foundHub.ip).then((hub) => {
+                        if (!hub)
+                            return reject(new Error('Hub connection not found'));
+
                         hub.stopActivity().then(() => {
                             resolve();
                         }).catch((err) => {
-                            console.log(err);
+                            this.error(err);
                             reject(err);
                         });
                     }).catch((err) => {
-                        console.log(err);
+                        this.error(err);
                         reject(err);
                     });
                 });
@@ -383,7 +424,7 @@ class App extends Homey.App {
     registerStartActivityCommandRunListener(startActivityAction) {
         startActivityAction
             .registerRunListener((args, state) => {
-                console.log('Start activity!!');
+                this.log('Start activity!!');
                 const hubArgValue = args.hub;
                 const hubId = hubArgValue.hubId;
                 const activityId = args.activity.activityId;
@@ -394,10 +435,13 @@ class App extends Homey.App {
                         return reject();
 
                     this._hubManager.connectToHub(foundHub.ip).then((hub) => {
+                        if (!hub)
+                            return reject(new Error('Hub connection not found'));
+
                         hub.startActivity(activityId).then(() => {
                             resolve();
                         }).catch((err) => {
-                            console.log(err);
+                            this.error(err);
                             reject(err);
                         });
                     }).catch((err) => {
@@ -415,7 +459,7 @@ class App extends Homey.App {
                 this._hubs.forEach((hub) => {
                     const autocompleteItem = {
                         name: hub.friendlyName,
-                        hubId: hub.uuid
+                        hubId: getCanonicalHubId(hub)
                     };
                     result.push(autocompleteItem);
                 });
@@ -431,22 +475,27 @@ class App extends Homey.App {
                 return new Promise((resolve, reject) => {
                     const result = [];
                     const hubArgValue = args.hub;
+                    if (!hubArgValue)
+                        return resolve(result);
+
                     const foundHub = this.getHub(hubArgValue.hubId);
 
                     if (foundHub === undefined)
                         return reject();
 
-                    if (hubArgValue !== '')
-                        this._hubManager.connectToHub(foundHub.ip).then((hub) => {
-                            hub.activities.forEach((activity) => {
-                                const autocompleteItem = {
-                                    name: activity.label,
-                                    activityId: activity.id
-                                };
-                                result.push(autocompleteItem);
-                            });
-                            resolve(result);
+                    this._hubManager.connectToHub(foundHub.ip).then((hub) => {
+                        if (!hub)
+                            return resolve(result);
+
+                        hub.activities.forEach((activity) => {
+                            const autocompleteItem = {
+                                name: activity.label,
+                                activityId: activity.id
+                            };
+                            result.push(autocompleteItem);
                         });
+                        resolve(result);
+                    }).catch(reject);
 
                 });
             });
@@ -455,7 +504,7 @@ class App extends Homey.App {
     registerSendCommandRunListener(sendCommandAction) {
         sendCommandAction
             .registerRunListener((args, state) => {
-                console.log('Send Command!!');
+                this.log('Send Command!!');
                 const hubDevice = args.device;
                 const hubDeviceData = hubDevice.getData();
                 const hubId = hubDeviceData.hubId;
@@ -470,7 +519,7 @@ class App extends Homey.App {
                     for (let index = 0; index - 1 < repeat; index++) {
                         this._hubManager.connectToHub(foundHub.ip).then((hub) => {
                             hub.commandAction(controlCommandArgValue.command).catch((err) => {
-                                console.log(err);
+                                this.error(err);
                                 reject(err);
                             });
                         });
@@ -528,54 +577,36 @@ class App extends Homey.App {
     }
 
     getPairedDevices() {
-        console.log('getPairedDevices...');
+        this.log('getPairedDevices...');
+        const summarize = (device) => {
+            const data = device.getData();
+            return {
+                name: device.getName(),
+                id: data.id,
+                hubId: data.hubId,
+                harmonyId: data.harmonyId,
+                available: device.getAvailable()
+            };
+        };
+
         const deviceDriver = this.homey.drivers.getDriver('harmony_device_driver');
-        const devices = deviceDriver.getDevices();
+        const activityDriver = this.homey.drivers.getDriver('harmony_activity_driver');
 
-        const cache = new Set();
-
-        const devicesJson = JSON.stringify(devices, function(key, value) {
-            if (typeof value === 'object' && value !== null) {
-                if (cache.has(value))
-                // Circular reference found
-                    try {
-                        // If this value does not reference a parent it can be deduped
-                        return JSON.parse(JSON.stringify(value));
-                    } catch (err) {
-                        // discard key if value cannot be deduped
-                        return;
-                    }
-
-                // Store value in our set
-                cache.add(value);
-            }
-            return value;
-        });
-
-        return Promise.resolve(devicesJson);
+        return {
+            devices: deviceDriver.getDevices().map(summarize),
+            activities: activityDriver.getDevices().map(summarize),
+            hubs: this._hubs.map((hub) => ({
+                ip: hub.ip,
+                friendlyName: hub.friendlyName,
+                remoteId: hub.remoteId
+            }))
+        };
     }
 
     sendDebugReport() {
-        this.getPairedDevices().then((body) => {
-            const url = new URL(Homey.env.DEBUG_REPORT_URL);
-            url.method = 'POST';
-            url.headers = {
-                'Content-Type': 'application/json',
-                'Content-Length': body.length
-            };
-
-            const request = https.request(url, (response) => {
-            });
-
-            request.on('error', (err) => {
-                console.log(err);
-            });
-
-            request.write(body);
-            request.end();
-
-            return Promise.resolve();
-        });
+        const report = this.getPairedDevices();
+        this.log('Diagnostic report generated locally');
+        return report;
     }
 
 }

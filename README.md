@@ -2,7 +2,16 @@
 
 This application adds support for the Logitech Harmony Hub to Homey. Control the available devices and/or activities inside a Homey flow, voice commands or the homey app.
 
-Make sure that Homey is connected to the same network as your Logitech Harmony Hub(s) and the app will autodiscover your hub(s). 
+Make sure that Homey is connected to the same network as your Logitech Harmony Hub(s) and the app will autodiscover your hub(s). If the hub is on another VLAN/subnet, set its IP address in the app settings.
+
+## Breaking change: re-pair required
+
+Device and activity identifiers now include the hub id:
+
+- `data.id` = `${hubId}:${harmonyId}`
+- `data.hubId` and `data.harmonyId` are stored separately
+
+Existing Harmony devices and activities in Homey must be removed and paired again. There is no automatic migration. Flows that use those devices/activities need to be reattached after pairing. 
 
 > Important: This app uses a local api available on your Logitech Harmony Hub that is undocumented and unsupported by Logitech. If Logitech decides to remove this api in a firmware upgrade this app will stop working.
 
@@ -159,6 +168,10 @@ With this card you can send a command registered in your Logitech Harmony Hub to
 - (Ok Homey,) Channel down [device or activity name]
 
 # Version History
+
+### v4.0.0
+- Cross-VLAN pairing via a configured hub IP, plus hardening of reconnect, identifiers, and discovery.
+- **Breaking:** existing Harmony devices and activities must be re-paired. Homey `data.id` is now `${hubId}:${harmonyId}`.
 
 ### v2.0.x
 - New option to add activities as a device.

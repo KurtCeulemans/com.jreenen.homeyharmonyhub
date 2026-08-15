@@ -1,6 +1,7 @@
 {
 	"save": "Save changes",
 	"offline" : "went offline",
+	"repair_required": "Please remove this device and pair it again after the app update.",
 	"settings": {
         "title": "Harmony Hub settings",
 		"hubsection": "Harmony Hub",
@@ -8,13 +9,8 @@
 		"savehubip": "Save IP address",
 		"hubipsaved": "IP address saved.",
 		"debugsection": "Debug",
-		"debugintro": "Use this if the application developer ask you to send a diagnostic report.",
-	    "senddebugreport": "Send diagnostic report"	
-    },
-	"pair": {
-		"select_hub": {
-			"title": "Select your Logitech harmony hub",
-			"no_hubs": "No Logitech Harmony Hubs have been found."
-		}
-	}
+		"debugintro": "Generate a local diagnostic summary. Nothing is sent to an external server.",
+	    "senddebugreport": "Generate diagnostic report",
+		"debuggenerated": "Local diagnostic report generated."
+    }
 }

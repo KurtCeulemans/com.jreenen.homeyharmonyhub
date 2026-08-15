@@ -61,8 +61,18 @@
             });
 
             downloadDebugFileElement.addEventListener('click', () => {
-                downloadDebugFileElement.parentNode.removeChild(downloadDebugFileElement);
-                Homey.api('POST', '/sendDebugReport/', {}, function (err) { });
+                Homey.api('POST', '/sendDebugReport/', {}, function (err, report) {
+                    if (err) {
+                        statusElement.style.color = '#c0392b';
+                        statusElement.textContent = String(err);
+                        return;
+                    }
+                    statusElement.style.color = '#2f8f2f';
+                    var deviceCount = report && report.devices ? report.devices.length : 0;
+                    var activityCount = report && report.activities ? report.activities.length : 0;
+                    statusElement.textContent = Homey.__('settings.debuggenerated') +
+                        ' (' + deviceCount + ' / ' + activityCount + ')';
+                });
             });
 
             Homey.ready();

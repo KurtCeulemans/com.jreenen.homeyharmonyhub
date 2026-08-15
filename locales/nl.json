@@ -1,6 +1,7 @@
 {
 	"save": "Sla veranderingen op",
 	"offline" : "is offline",
+	"repair_required": "Verwijder dit device en pair het opnieuw na de app-update.",
 	"settings": {
         "title": "Homey Harmony Hub instellingen",
 		"hubsection": "Harmony Hub",
@@ -8,13 +9,8 @@
 		"savehubip": "IP-adres opslaan",
 		"hubipsaved": "IP-adres opgeslagen.",
 		"debugsection": "Debug",
-		"debugintro": "Gebruik dit als de applicatie ontwikkelaar je vraagt om een diagnostisch rapport op te sturen.",
-		"senddebugreport": "Verstuur diagnostisch rapport"
-    },
-	"pair": {
-		"select_hub": {
-			"title": "Selecteer je Logitech Harmony Hub",
-			"no_hubs": "Geen Logitech Harmony Hubs gevonden."
-		}
-	}
+		"debugintro": "Maak een lokaal diagnostisch overzicht. Er wordt niets naar een externe server gestuurd.",
+		"senddebugreport": "Genereer diagnostisch rapport",
+		"debuggenerated": "Lokaal diagnostisch rapport gegenereerd."
+    }
 }

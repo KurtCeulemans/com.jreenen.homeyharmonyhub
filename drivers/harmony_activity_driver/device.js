@@ -2,183 +2,153 @@
 
 const Homey = require('homey');
 const HubManager = require('../../lib/hubmanager.js');
+const { deviceEventKey, sameHubId } = require('../../lib/hubidentity.js');
 const hubManager = new HubManager();
 
 class HarmonyActivity extends Homey.Device {
 
     async onInit() {
         this._deviceData = this.getData();
+        this._hubId = this._deviceData.hubId;
+        this._harmonyId = this._deviceData.harmonyId;
 
-        this.setUnavailable(`Hub ${this.homey.__('offline')}`);
+        if (!this._hubId || !this._harmonyId) {
+            await this.setUnavailable(this.homey.__('repair_required'));
+            this.log(`Activity ${this._deviceData.id} needs to be re-paired after the identifier change.`);
+            return;
+        }
 
-        this.homey.app.on(`${this._deviceData.id}_online`, (hub) => {
-            if (hub.uuid === this._deviceData.hubId) {
-                this.hub = hub;
-                this.setAvailable();
-            }
-        });
+        this._eventKey = deviceEventKey(this._hubId, this._harmonyId);
+        await this.setUnavailable(`Hub ${this.homey.__('offline')}`);
 
-        this.homey.app.on(`${this._deviceData.id}_offline`, (hub) => {
-            this._deviceData = this.getData();
-            if (hub.uuid === this._deviceData.hubId)
-                this.setUnavailable(`Hub ${this.homey.__('offline')}`);
+        this._onOnline = (hub) => {
+            if (!this._isSameHub(hub))
+                return;
+            this.hub = hub;
+            this.setAvailable();
+        };
 
-        });
+        this._onOffline = (hub) => {
+            if (!this._isSameHub(hub))
+                return;
+            this.setUnavailable(`Hub ${this.homey.__('offline')}`);
+        };
 
-        hubManager.on('activityChanged', (activityName, hubId) => {
+        this._onActivityChanged = (activityName, hubId) => {
             if (this.hub === undefined)
                 return;
 
-            if (hubId !== this.hub.uuid)
+            if (!sameHubId(hubId, this.hub.remoteId || this.hub.uuid))
                 return;
 
             if (activityName === this._deviceData.label) {
-                console.log(`Turning on ${this._deviceData.label} at ${this.hub.friendlyName}`)
+                this.log(`Turning on ${this._deviceData.label} at ${this.hub.friendlyName}`)
                 this.setCapabilityValue('onoff', true);
             } else {
-                console.log(`Turning off ${this._deviceData.label} at ${this.hub.friendlyName}`)
+                this.log(`Turning off ${this._deviceData.label} at ${this.hub.friendlyName}`)
                 this.setCapabilityValue('onoff', false);
             }
-        });
+        };
 
-        this.registerCapabilityListener('onoff', async (turnon, opts) => {
-            const deviceDataId = this._deviceData.id;
-            console.log(`ON/OFF triggered on ${this._deviceData.label}(${deviceDataId})`);
+        this.homey.app.on(`${this._eventKey}_online`, this._onOnline);
+        this.homey.app.on(`${this._eventKey}_offline`, this._onOffline);
+        hubManager.on('activityChanged', this._onActivityChanged);
+
+        this.registerCapabilityListener('onoff', async (turnon) => {
+            this.log(`ON/OFF triggered on ${this._deviceData.label}(${this._harmonyId})`);
 
             if (this.hub === undefined)
-                return;
+                throw new Error('Hub is not available');
 
-            hubManager.connectToHub(this.hub.ip).then((hub) => {
-                if (turnon)
-                    hub.startActivity(deviceDataId).catch((err) => {
-                        console.log(err);
-                        return Promise.reject(err);
-                    });
+            const hub = await hubManager.connectToHub(this.hub.ip);
+            if (!hub)
+                throw new Error('Hub connection not found');
 
-                else
-                    hub.stopActivity().catch((err) => {
-                        console.log(err);
-                        return Promise.reject(err);
-                    });
+            if (turnon)
+                return hub.startActivity(this._harmonyId);
 
-            });
+            return hub.stopActivity();
         });
 
+        this._registerCapabilityListeners();
+        this.log(`Activity (${this._harmonyId}) - ${this._deviceData.label} initializing..`);
+    }
+
+    _isSameHub(hub) {
+        if (!hub)
+            return false;
+        return sameHubId(hub.remoteId || hub.hubId || hub.uuid, this._hubId);
+    }
+
+    _registerCapabilityListeners() {
         this.getCapabilities().forEach(capability => {
             if (capability === 'volume_up')
-                this.registerCapabilityListener('volume_up', async (value, opts) => {
-                    return new Promise((resolve, reject) => {
-                        console.log(`Volume up triggered on ${this._deviceData.label}`)
-
-                        const volumeGroup = this._deviceData.controlGroup.find(x => x.name === 'Volume');
-                        const volumeUpFunction = volumeGroup.function.find(x => x.name === 'VolumeUp');
-                        const foundHub = this.hub;
-
-                        hubManager.connectToHub(foundHub.ip).then((hub) => {
-                            hub.commandAction(volumeUpFunction).catch((err) => {
-                                console.log(err);
-                                return Promise.reject(err);
-                            });
-                        });
-
-                    });
-                });
+                this.registerCapabilityListener('volume_up', () => this._runGroupedCommand('Volume', 'VolumeUp', 'Volume up'));
 
             if (capability === 'volume_down')
-                this.registerCapabilityListener('volume_down', async (value, opts) => {
-                    return new Promise((resolve, reject) => {
-                        console.log(`Volume down triggered on ${this._deviceData.label}`)
-                        const volumeGroup = this._deviceData.controlGroup.find(x => x.name === 'Volume');
-                        const volumeDownFunction = volumeGroup.function.find(x => x.name === 'VolumeDown');
-                        const foundHub = this.hub;
-
-                        hubManager.connectToHub(foundHub.ip).then((hub) => {
-                            hub.commandAction(volumeDownFunction).catch((err) => {
-                                console.log(err);
-                                return Promise.reject(err);
-                            });
-                        });
-
-                    });
-                });
+                this.registerCapabilityListener('volume_down', () => this._runGroupedCommand('Volume', 'VolumeDown', 'Volume down'));
 
             if (capability === 'volume_mute')
-                this.registerCapabilityListener('volume_mute', async (value, opts) => {
-                    return new Promise((resolve, reject) => {
-                        console.log(`Volume mute triggered on ${this._deviceData.label}`)
-                        const volumeGroup = this._deviceData.controlGroup.find(x => x.name === 'Volume');
-                        const volumeMuteFunction = volumeGroup.function.find(x => x.name === 'Mute');
-                        const foundHub = this.hub;
-
-                        hubManager.connectToHub(foundHub.ip).then((hub) => {
-                            hub.commandAction(volumeMuteFunction).catch((err) => {
-                                console.log(err);
-                                return Promise.reject(err);
-                            });
-                        });
-
-                    });
-                });
+                this.registerCapabilityListener('volume_mute', () => this._runGroupedCommand('Volume', 'Mute', 'Volume mute'));
 
             if (capability === 'channel_up')
-                this.registerCapabilityListener('channel_up', async (value, opts) => {
-                    return new Promise((resolve, reject) => {
-                        console.log(`Channel up triggered on ${this._deviceData.label}`)
-                        const channelGroup = this._deviceData.controlGroup.find(x => x.name === 'Channel');
-                        const channelUpFunction = channelGroup.function.find(x => x.name === 'ChannelUp');
-                        const foundHub = this.hub;
-
-                        hubManager.connectToHub(foundHub.ip).then((hub) => {
-                            hub.commandAction(channelUpFunction).catch((err) => {
-                                console.log(err);
-                                return Promise.reject(err);
-                            });
-                        });
-
-                    });
-                });
+                this.registerCapabilityListener('channel_up', () => this._runGroupedCommand('Channel', 'ChannelUp', 'Channel up'));
 
             if (capability === 'channel_down')
-                this.registerCapabilityListener('channel_down', async (value, opts) => {
-                    return new Promise((resolve, reject) => {
-                        console.log(`Channel down triggered on ${this._deviceData.label}`)
-                        const channelGroup = this._deviceData.controlGroup.find(x => x.name === 'Channel');
-                        const channelDownFunction = channelGroup.function.find(x => x.name === 'ChannelDown');
-                        const foundHub = this.hub;
-
-                        hubManager.connectToHub(foundHub.ip).then((hub) => {
-                            hub.commandAction(channelDownFunction).catch((err) => {
-                                console.log(err);
-                                return Promise.reject(err);
-                            });
-                        });
-
-                    });
-                });
-
+                this.registerCapabilityListener('channel_down', () => this._runGroupedCommand('Channel', 'ChannelDown', 'Channel down'));
         });
+    }
 
-        console.log(`Activity (${this._deviceData.id}) - ${this._deviceData.label} initializing..`);
+    async _runGroupedCommand(groupName, functionName, label) {
+        this.log(`${label} triggered on ${this._deviceData.label}`);
+        if (!this.hub)
+            throw new Error('Hub is not available');
+
+        const group = this._deviceData.controlGroup.find(x => x.name === groupName);
+        if (!group)
+            throw new Error(`Control group ${groupName} not found`);
+
+        const command = group.function.find(x => x.name === functionName);
+        if (!command)
+            throw new Error(`Command ${functionName} not found`);
+
+        const hub = await hubManager.connectToHub(this.hub.ip);
+        if (!hub)
+            throw new Error('Hub connection not found');
+
+        return hub.commandAction(command);
     }
 
     onAdded() {
         this.log('activity added');
         const foundHub = this.homey.app.getHub(this._deviceData.hubId);
         this.hub = foundHub;
+        if (!foundHub || !foundHub.ip)
+            return;
+
         hubManager.connectToHub(foundHub.ip).then((hub) => {
+            if (!hub || !hub.currentActivity)
+                return;
+
             if (hub.currentActivity.label === this._deviceData.label)
                 this.setCapabilityValue('onoff', true);
 
             else
                 this.setCapabilityValue('onoff', false);
 
-        });
+        }).catch((err) => this.error(err));
 
         this.setAvailable();
     }
 
     onDeleted() {
         this.log('activity deleted');
+        if (this._eventKey) {
+            this.homey.app.removeListener(`${this._eventKey}_online`, this._onOnline);
+            this.homey.app.removeListener(`${this._eventKey}_offline`, this._onOffline);
+        }
+        if (this._onActivityChanged)
+            hubManager.removeListener('activityChanged', this._onActivityChanged);
     }
 
 }
