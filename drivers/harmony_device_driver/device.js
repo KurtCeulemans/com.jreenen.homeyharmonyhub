@@ -27,13 +27,13 @@ class HarmonyDevice extends Homey.Device {
             this.hub = this.homey.app.getHub(this._hubId);
             if (!this.hub)
                 return;
-            this.setAvailable();
+            this.setAvailable().catch((err) => this.error(err));
         };
 
         this._onOffline = (hub) => {
             if (!this._isSameHub(hub))
                 return;
-            this.setUnavailable(`Hub ${this.homey.__('offline')}`);
+            this.setUnavailable(`Hub ${this.homey.__('offline')}`).catch((err) => this.error(err));
         };
 
         this._onDeviceInitialized = (device) => {
@@ -42,8 +42,11 @@ class HarmonyDevice extends Homey.Device {
 
             this.device = device;
             this._onStateChanged = (state) => {
+                if (!state || typeof state !== 'object')
+                    return;
+
                 if (this.getCapabilities().find(c => c === 'onoff')) {
-                    this.setCapabilityValue('onoff', state.Power === 'On');
+                    this.setCapabilityValue('onoff', state.Power === 'On').catch((err) => this.error(err));
                     this.triggerOnOffAction(state);
                 }
             };
@@ -119,7 +122,7 @@ class HarmonyDevice extends Homey.Device {
                 hub.syncHub();
         }).catch((err) => this.error(err));
 
-        this.setAvailable();
+        this.setAvailable().catch((err) => this.error(err));
     }
 
     onDeleted() {
@@ -134,6 +137,9 @@ class HarmonyDevice extends Homey.Device {
     }
 
     triggerOnOffAction(deviceState) {
+        if (!deviceState || typeof deviceState !== 'object')
+            return;
+
         const currenOnOffState = this.getCapabilityValue('onoff');
         const turnedOnDeviceTrigger = this.homey.flow.getDeviceTriggerCard('turned_on');
         const turnedOffDeviceTrigger = this.homey.flow.getDeviceTriggerCard('turned_off');
@@ -151,12 +157,12 @@ class HarmonyDevice extends Homey.Device {
             if (currenOnOffState !== deviceTurnedOn) {
 
                 if (currenOnOffState === false)
-                    turnedOnDeviceTrigger.trigger(device, tokens, state);
+                    turnedOnDeviceTrigger.trigger(device, tokens, state).catch((err) => this.error(err));
 
                 else
-                    turnedOffDeviceTrigger.trigger(device, tokens, state);
+                    turnedOffDeviceTrigger.trigger(device, tokens, state).catch((err) => this.error(err));
 
-                this.setCapabilityValue('onoff', deviceTurnedOn);
+                this.setCapabilityValue('onoff', deviceTurnedOn).catch((err) => this.error(err));
             }
         }
     }

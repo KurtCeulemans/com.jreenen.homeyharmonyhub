@@ -90,11 +90,13 @@ class App extends Homey.App {
     }
 
     _registerSettingsListener() {
-        this.homey.settings.on('set', async (key) => {
+        this.homey.settings.on('set', (key) => {
             if (key !== 'harmonyHubIp')
                 return;
 
-            await this._connectConfiguredHub();
+            this._connectConfiguredHub().catch((err) => {
+                this.error(`Failed to apply Harmony Hub IP setting: ${err}`);
+            });
         });
     }
 
@@ -134,7 +136,7 @@ class App extends Homey.App {
             }
 
             const activityStartedTrigger = this.homey.flow.getTriggerCard('activity_started');
-            activityStartedTrigger.trigger(tokens)
+            activityStartedTrigger.trigger(tokens).catch((err) => this.error(err));
         });
 
         this._hubManager.on('inactivitytime', (minutes, hubId) => {
@@ -149,7 +151,7 @@ class App extends Homey.App {
             }
 
             const inactiveTrigger = this.homey.flow.getTriggerCard('hub_inactive')
-            inactiveTrigger.trigger(tokens, state);
+            inactiveTrigger.trigger(tokens, state).catch((err) => this.error(err));
         })
 
         this._hubManager.on('activityChanging', (activityName, hubId) => {
@@ -165,7 +167,7 @@ class App extends Homey.App {
             }
 
             this._activityStartingTrigger = this.homey.flow.getTriggerCard('activity_starting');
-            this._activityStartingTrigger.trigger(tokens)
+            this._activityStartingTrigger.trigger(tokens).catch((err) => this.error(err));
 
         });
 
@@ -182,7 +184,7 @@ class App extends Homey.App {
 
             this._activityStoppedTrigger = this.homey.flow.getTriggerCard('activity_stopped');
 
-            this._activityStoppedTrigger.trigger(tokens)
+            this._activityStoppedTrigger.trigger(tokens).catch((err) => this.error(err));
         });
     }
 
@@ -215,7 +217,6 @@ class App extends Homey.App {
             throw new Error(
                 'No Harmony Hub IP configured. Open App settings, enter the hub IP under Harmony Hub, save, and try pairing again.'
             );
-
 
         const hub = hubs[0];
         if (hub.remoteId)
@@ -518,10 +519,15 @@ class App extends Homey.App {
 
                     for (let index = 0; index - 1 < repeat; index++) {
                         this._hubManager.connectToHub(foundHub.ip).then((hub) => {
+                            if (!hub)
+                                return;
+
                             hub.commandAction(controlCommandArgValue.command).catch((err) => {
                                 this.error(err);
                                 reject(err);
                             });
+                        }).catch((err) => {
+                            this.error(err);
                         });
 
                         if (index === repeat)

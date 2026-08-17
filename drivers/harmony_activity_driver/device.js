@@ -25,13 +25,13 @@ class HarmonyActivity extends Homey.Device {
             if (!this._isSameHub(hub))
                 return;
             this.hub = hub;
-            this.setAvailable();
+            this.setAvailable().catch((err) => this.error(err));
         };
 
         this._onOffline = (hub) => {
             if (!this._isSameHub(hub))
                 return;
-            this.setUnavailable(`Hub ${this.homey.__('offline')}`);
+            this.setUnavailable(`Hub ${this.homey.__('offline')}`).catch((err) => this.error(err));
         };
 
         this._onActivityChanged = (activityName, hubId) => {
@@ -43,10 +43,10 @@ class HarmonyActivity extends Homey.Device {
 
             if (activityName === this._deviceData.label) {
                 this.log(`Turning on ${this._deviceData.label} at ${this.hub.friendlyName}`)
-                this.setCapabilityValue('onoff', true);
+                this.setCapabilityValue('onoff', true).catch((err) => this.error(err));
             } else {
                 this.log(`Turning off ${this._deviceData.label} at ${this.hub.friendlyName}`)
-                this.setCapabilityValue('onoff', false);
+                this.setCapabilityValue('onoff', false).catch((err) => this.error(err));
             }
         };
 
@@ -131,14 +131,14 @@ class HarmonyActivity extends Homey.Device {
                 return;
 
             if (hub.currentActivity.label === this._deviceData.label)
-                this.setCapabilityValue('onoff', true);
+                this.setCapabilityValue('onoff', true).catch((err) => this.error(err));
 
             else
-                this.setCapabilityValue('onoff', false);
+                this.setCapabilityValue('onoff', false).catch((err) => this.error(err));
 
         }).catch((err) => this.error(err));
 
-        this.setAvailable();
+        this.setAvailable().catch((err) => this.error(err));
     }
 
     onDeleted() {
