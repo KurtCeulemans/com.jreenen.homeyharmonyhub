@@ -127,18 +127,19 @@ class HarmonyActivity extends Homey.Device {
             return;
 
         hubManager.connectToHub(foundHub.ip).then((hub) => {
-            if (!hub || !hub.currentActivity)
+            if (!hub)
                 return;
 
-            if (hub.currentActivity.label === this._deviceData.label)
-                this.setCapabilityValue('onoff', true).catch((err) => this.error(err));
+            if (hub.currentActivity)
+                if (hub.currentActivity.label === this._deviceData.label)
+                    this.setCapabilityValue('onoff', true).catch((err) => this.error(err));
+                else
+                    this.setCapabilityValue('onoff', false).catch((err) => this.error(err));
 
-            else
-                this.setCapabilityValue('onoff', false).catch((err) => this.error(err));
+            if (!hub.devicesMarkedUnavailable && hub.hubConnection && hub.hubConnection.readyState === 1)
+                this.setAvailable().catch((err) => this.error(err));
 
         }).catch((err) => this.error(err));
-
-        this.setAvailable().catch((err) => this.error(err));
     }
 
     onDeleted() {

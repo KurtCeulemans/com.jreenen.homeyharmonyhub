@@ -118,11 +118,12 @@ class HarmonyDevice extends Homey.Device {
             return;
 
         hubManager.connectToHub(foundHub.ip).then((hub) => {
-            if (hub)
-                hub.syncHub();
+            if (!hub)
+                return;
+            hub.syncHub();
+            if (!hub.devicesMarkedUnavailable && hub.hubConnection && hub.hubConnection.readyState === 1)
+                this.setAvailable().catch((err) => this.error(err));
         }).catch((err) => this.error(err));
-
-        this.setAvailable().catch((err) => this.error(err));
     }
 
     onDeleted() {

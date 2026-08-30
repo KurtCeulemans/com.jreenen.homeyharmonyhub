@@ -85,6 +85,11 @@ class App extends Homey.App {
         await this._connectConfiguredHub();
     }
 
+    async onUninit() {
+        if (this._hubManager && typeof this._hubManager.destroyAll === 'function')
+            this._hubManager.destroyAll();
+    }
+
     _readConfiguredIp(value) {
         return typeof value === 'string' ? value.trim() : '';
     }
